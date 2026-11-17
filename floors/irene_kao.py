@@ -39,7 +39,8 @@ GALLERY = {"wall": (92, 24, 72), "dots": (140, 50, 110), "title": GOLD}
 
 
 def comic_wall(palette):
-    """A halftone comic wall inside an ink frame. Built once in build(), then blitted every frame."""
+    """A halftone comic wall with a shaded vignette, a baseboard and an ink frame. Built once in build(),
+    then blitted every frame."""
     surf = pygame.Surface((C.W, C.H))
     surf.fill(palette["wall"])
     step = 14
@@ -47,6 +48,13 @@ def comic_wall(palette):
         offset = step // 2 if row % 2 else 0
         for x in range(-step, C.W + step, step):
             pygame.draw.circle(surf, palette["dots"], (x + offset, y), 2)
+    shade = pygame.Surface((C.W, C.H), pygame.SRCALPHA)
+    for i in range(0, 60, 3):                                 # darker towards the edges of the room
+        pygame.draw.rect(shade, (0, 0, 0, 60 - i), (i, i, C.W - 2 * i, C.H - 2 * i), 3)
+    surf.blit(shade, (0, 0))
+    base = tuple(int(c * 0.55) for c in palette["wall"])      # the baseboard along the floor
+    pygame.draw.rect(surf, base, (0, C.FLOOR_Y - 16, C.W, 16))
+    pygame.draw.line(surf, INK, (0, C.FLOOR_Y - 16), (C.W, C.FLOOR_Y - 16), 3)
     pygame.draw.rect(surf, INK, surf.get_rect(), 8)
     return surf
 
@@ -127,26 +135,32 @@ class Panel:
     """A comic-book panel: an ink-framed picture with halftone shading and an optional caption box.
     x, y is its top-left corner. Decor: only looked at."""
 
-    def __init__(self, x, y, w, h, art, sky, caption=None, caption_fill=YELLOW):
-        self.image = pygame.Surface((w, h))
-        r = self.image.get_rect()
-        self.image.fill(sky)
+    def __init__(self, x, y, w, h, art, sky, caption=None, caption_fill=YELLOW, frame=None):
+        pad = 7 if frame else 0                  # a gilt frame goes around the picture when frame is given
+        self.image = pygame.Surface((w + 2 * pad, h + 2 * pad))
+        if frame:
+            self.image.fill(frame)
+        pic = self.image.subsurface(pygame.Rect(pad, pad, w, h))
+        r = pic.get_rect()
+        pic.fill(sky)
         dots = tuple(max(0, c - 22) for c in sky)
         for row, yy in enumerate(range(0, h, 8)):
             for xx in range(4 if row % 2 else 0, w, 8):
-                pygame.draw.circle(self.image, dots, (xx, yy), 1)
-        art(self.image, r, sky)
+                pygame.draw.circle(pic, dots, (xx, yy), 1)
+        art(pic, r, sky)
         if caption:
             font = pygame.font.Font(None, 24)
             font.set_bold(True)
             label = font.render(caption, True, INK)
             box = pygame.Rect(0, 0, label.get_width() + 12, label.get_height() + 6)
             box.midtop = (r.centerx, 6)
-            pygame.draw.rect(self.image, caption_fill, box)
-            pygame.draw.rect(self.image, INK, box, 2)
-            self.image.blit(label, label.get_rect(center=box.center))
-        pygame.draw.rect(self.image, INK, r, 4)
-        self.pos = (int(x), int(y))
+            pygame.draw.rect(pic, caption_fill, box)
+            pygame.draw.rect(pic, INK, box, 2)
+            pic.blit(label, label.get_rect(center=box.center))
+        pygame.draw.rect(pic, INK, r, 4)
+        if frame:
+            pygame.draw.rect(self.image, INK, self.image.get_rect(), 2)
+        self.pos = (int(x) - pad, int(y) - pad)
 
     def draw(self, surf):
         surf.blit(self.image, self.pos)
@@ -166,6 +180,74 @@ class Caption:
         pygame.draw.rect(self.image, INK, (0, 0, w, h), 3)
         self.image.blit(label, label.get_rect(center=(w // 2, h // 2)))
         self.pos = (int(x), int(y))
+
+    def draw(self, surf):
+        surf.blit(self.image, self.pos)
+
+
+class Corkboard:
+    """A cork noticeboard with pages pinned to it. x, y is its top-left corner. Decor: only looked at.
+    pages: (fx, fy, fw, fh, pin colour), as fractions of the board."""
+
+    def __init__(self, x, y, w, h, pages):
+        self.image = pygame.Surface((w, h))
+        self.image.fill((176, 128, 74))
+        for xx in range(3, w, 7):
+            for yy in range(3, h, 7):
+                if (xx * 3 + yy * 5) % 4 == 0:
+                    pygame.draw.circle(self.image, (140, 96, 52), (xx, yy), 1)
+        for fx, fy, fw, fh, pin in pages:
+            page = pygame.Rect(int(fx * w), int(fy * h), int(fw * w), int(fh * h))
+            pygame.draw.rect(self.image, PAPER, page)
+            pygame.draw.rect(self.image, INK, page, 1)
+            pygame.draw.line(self.image, INK, (page.left + 3, page.top + 4), (page.right - 4, page.top + 4), 1)
+            pygame.draw.circle(self.image, pin, (page.centerx, page.top + 2), 3)
+            pygame.draw.circle(self.image, INK, (page.centerx, page.top + 2), 3, 1)
+        pygame.draw.rect(self.image, INK, self.image.get_rect(), 4)
+        self.pos = (int(x), int(y))
+
+    def draw(self, surf):
+        surf.blit(self.image, self.pos)
+
+
+class Clock:
+    """A wall clock, set to ten past ten. x, y is its centre. Decor: only looked at."""
+
+    def __init__(self, x, y, r):
+        self.centre, self.r = (int(x), int(y)), r
+
+    def draw(self, surf):
+        cx, cy = self.centre
+        r = self.r
+        pygame.draw.circle(surf, PAPER, self.centre, r)
+        pygame.draw.circle(surf, INK, self.centre, r, 3)
+        for k in range(12):
+            a = math.radians(k * 30) - math.pi / 2
+            outer = (cx + math.cos(a) * (r - 2), cy + math.sin(a) * (r - 2))
+            inner = (cx + math.cos(a) * (r - 6), cy + math.sin(a) * (r - 6))
+            pygame.draw.line(surf, INK, outer, inner, 2)
+        for degrees, length, width in ((300, 0.5, 3), (60, 0.8, 2)):     # hour hand and minute hand
+            a = math.radians(degrees) - math.pi / 2
+            tip = (cx + math.cos(a) * r * length, cy + math.sin(a) * r * length)
+            pygame.draw.line(surf, INK, self.centre, tip, width)
+        pygame.draw.circle(surf, RED, self.centre, 2)
+
+
+class Splat:
+    """A splash of ink on the wall. x, y is its centre. Decor: only looked at."""
+
+    def __init__(self, x, y, size, colour):
+        span = size * 6
+        self.image = pygame.Surface((span, span), pygame.SRCALPHA)
+        c = (span // 2, span // 2)
+        pygame.draw.circle(self.image, colour, c, size)
+        for dx, dy, k in ((-1.3, -0.4, 0.45), (1.1, -1.0, 0.35), (1.4, 0.6, 0.5), (-0.6, 1.3, 0.4), (0.3, -1.6, 0.3)):
+            pygame.draw.circle(self.image, colour, (int(c[0] + dx * size), int(c[1] + dy * size)), max(2, int(size * k)))
+        for dx, k in ((-0.5, 0.8), (0.6, 1.0), (1.2, 0.5)):          # drips
+            top = (int(c[0] + dx * size), int(c[1] + size * 0.6))
+            bottom = (int(c[0] + dx * size), int(c[1] + size * (1.6 + k)))
+            pygame.draw.line(self.image, colour, top, bottom, max(2, size // 4))
+        self.pos = (int(x) - span // 2, int(y) - span // 2)
 
     def draw(self, surf):
         surf.blit(self.image, self.pos)
@@ -226,12 +308,10 @@ def _mirror(pairs, flip):
 
 class ArtistDesk(Furniture):
     """An artist's table, drawn at twice the characters' scale (a person is about 44 px tall in this game).
-    60 px wide and its top sits about 42 px off the floor. Four views:
+    60 px wide and its top sits about 42 px off the floor. Two views:
 
       'side'           in profile, with a tilted board and a lamp
       'front'          facing you, with a comic page standing on it
-      'three_quarter'  the top seen at an angle, with the board leaning back
-      'spread'         pages laid out on the top, seen from above
 
     flip=True turns it around. Searchable like any desk: its rect is the part you search.
     """
@@ -265,28 +345,6 @@ class ArtistDesk(Furniture):
             poly((200, 60, 60), [(0.08, 0.44), (0.22, 0.44), (0.22, 0.58), (0.08, 0.58)])  # pencil cup
             line(YELLOW, (0.12, 0.44), (0.10, 0.30), 2)
             line(CYAN, (0.18, 0.44), (0.20, 0.32), 2)
-        elif self.view == "three_quarter":
-            poly(light, [(0.00, 0.52), (0.62, 0.36), (1.00, 0.46), (0.38, 0.62)])         # top, seen at an angle
-            poly(wood, [(0.00, 0.52), (0.38, 0.62), (0.38, 0.70), (0.00, 0.60)])         # front edge
-            poly(wood, [(0.38, 0.62), (1.00, 0.46), (1.00, 0.54), (0.38, 0.70)])         # side edge
-            line(WOOD_DARK, (0.04, 0.60), (0.04, 1.00), 2)
-            line(WOOD_DARK, (0.38, 0.70), (0.38, 1.00), 2)
-            line(WOOD_DARK, (0.97, 0.54), (0.97, 1.00), 2)
-            poly(PAPER, [(0.14, 0.38), (0.56, 0.06), (0.80, 0.12), (0.40, 0.42)])        # board leaning back
-            line(INK, (0.34, 0.24), (0.62, 0.10), 1)
-            line(METAL, (0.90, 0.42), (0.90, 0.06), 2)                                    # lamp pole
-            poly(YELLOW, [(0.84, 0.00), (1.00, 0.08), (0.84, 0.12)])                       # lamp shade
-        elif self.view == "spread":
-            poly(light, [(0.00, 0.42), (0.78, 0.30), (1.00, 0.46), (0.22, 0.62)])         # top, from above
-            poly(wood, [(0.22, 0.62), (1.00, 0.46), (1.00, 0.52), (0.22, 0.68)])         # front edge
-            line(WOOD_DARK, (0.06, 0.62), (0.06, 1.00), 2)
-            line(WOOD_DARK, (0.22, 0.68), (0.22, 1.00), 2)
-            line(WOOD_DARK, (0.94, 0.52), (0.94, 1.00), 2)
-            poly(PAPER, [(0.10, 0.40), (0.46, 0.30), (0.60, 0.42), (0.24, 0.52)])        # page one
-            line(INK, (0.35, 0.35), (0.42, 0.47), 1)
-            poly(PAPER, [(0.50, 0.46), (0.80, 0.36), (0.92, 0.44), (0.62, 0.54)])        # page two
-            line(INK, (0.70, 0.41), (0.76, 0.50), 1)
-            line(YELLOW, (0.66, 0.60), (0.90, 0.56), 2)                                   # a pencil
         else:                                                                             # 'side'
             poly(wood, [(0.00, 0.52), (0.92, 0.36), (0.92, 0.46), (0.00, 0.62)])         # tilted board
             poly(PAPER, [(0.08, 0.52), (0.82, 0.38), (0.82, 0.45), (0.08, 0.60)])        # page on the board
@@ -498,16 +556,19 @@ class Bullpen(Room):
             Bubble(470, 250, "HA HA!"),
             Burst(500, 160, "ZAP!", YELLOW),
             Panel(640, 56, 150, 124, skyline_art, (20, 60, 150), "CITY", YELLOW),
+            Corkboard(40, 226, 124, 110, [(0.08, 0.14, 0.38, 0.34, RED), (0.54, 0.10, 0.36, 0.30, CYAN),
+                                          (0.18, 0.56, 0.48, 0.30, YELLOW), (0.66, 0.52, 0.28, 0.38, MINT)]),
+            Clock(868, 262, 20),
             CeilingLight(480),
         ]
         self.platforms.append(Platform(400, 410, 200))
         self.furniture += [
             ArtistDesk(90, C.FLOOR_Y, "drafting table", view="front"),
-            ArtistDesk(160, C.FLOOR_Y, "inking desk", view="three_quarter"),
+            ArtistDesk(160, C.FLOOR_Y, "inking desk", view="side"),
             ArtistDesk(230, C.FLOOR_Y, "lettering desk", view="side", flip=True),
-            ArtistDesk(700, C.FLOOR_Y, "ink wash table", view="spread"),
+            ArtistDesk(700, C.FLOOR_Y, "ink wash table", view="front"),
             Bookshelf(806, C.FLOOR_Y, "back issues"),
-            ArtistDesk(420, 410, "layout desk", view="three_quarter"),
+            ArtistDesk(420, 410, "layout desk", view="side"),
             ArtistDesk(500, 410, "sketch desk", view="front", flip=True),
         ]
         self.hazards.append(Villain(PatrolBot(360, C.FLOOR_Y, left=330, right=640, speed=80), pencil_thug))
@@ -533,6 +594,9 @@ class InkRoom(Room):
             Bubble(220, 190, "SHH..."),
             Bubble(200, 330, "MWAHAHA!"),
             Burst(820, 170, "INK!", ORANGE),
+            Splat(250, 268, 16, (120, 40, 170)),
+            Splat(708, 34, 11, (120, 40, 170)),
+            Splat(470, 96, 9, (40, 130, 120)),
             CeilingLight(320),
         ]
         # Each ledge is one jump (about 90 px) above the last, so you can climb them in order.
@@ -545,12 +609,12 @@ class InkRoom(Room):
             Easel(110, 410, "sketch easel"),
             FilingCabinet(430, 330, "ink drawer"),
             Plinth(700, 250, "original page", holds_piece=True),
-            ArtistDesk(500, 330, "ink table", view="three_quarter"),
+            ArtistDesk(500, 330, "ink table", view="side"),
             ArtistDesk(320, C.FLOOR_Y, "light table", view="side"),
             ArtistDesk(392, C.FLOOR_Y, "drafting table", view="front", flip=True),
-            ArtistDesk(464, C.FLOOR_Y, "spread desk", view="spread"),
+            ArtistDesk(464, C.FLOOR_Y, "page desk", view="front"),
             Couch(600, C.FLOOR_Y, "reading couch"),
-            ArtistDesk(760, C.FLOOR_Y, "inking table", view="spread", flip=True),
+            ArtistDesk(760, C.FLOOR_Y, "inking table", view="side", flip=True),
         ]
         self.hazards.append(Villain(PatrolBot(180, C.FLOOR_Y, left=90, right=262, speed=80), inkblot))
 
@@ -571,19 +635,20 @@ class Gallery(Room):
         self.decor += [
             Caption(250, 46, "THE GALLERY!", GALLERY["title"]),
             Caption(60, 230, "TO BE CONTINUED...", GOLD, size=22),
-            Panel(120, 66, 92, 124, hero_art, (200, 60, 50), "END", GOLD),
-            Panel(600, 56, 150, 124, skyline_art, (60, 20, 110), "NIGHT", GOLD),
-            Burst(850, 300, "WHAM!", GOLD),
+            Panel(120, 66, 92, 124, hero_art, (200, 60, 50), "END", GOLD, frame=GOLD),
+            Panel(600, 56, 150, 124, skyline_art, (60, 20, 110), "NIGHT", GOLD, frame=GOLD),
+            Burst(868, 338, "WHAM!", GOLD),
+            Caption(700, 232, "DO NOT TOUCH", GOLD, size=20),
             CeilingLight(480),
         ]
         self.platforms.append(Platform(300, 410, 180))
         self.furniture += [
             Plinth(120, C.FLOOR_Y, "panel one"),
             ArtistDesk(204, C.FLOOR_Y, "ink table", view="front"),
-            ArtistDesk(268, C.FLOOR_Y, "drafting table", view="spread", flip=True),
+            ArtistDesk(268, C.FLOOR_Y, "drafting table", view="side", flip=True),
             Plinth(330, 410, "panel two"),
             ArtistDesk(412, 410, "lettering desk", view="side"),
-            ArtistDesk(580, C.FLOOR_Y, "drafting table", view="three_quarter"),
+            ArtistDesk(580, C.FLOOR_Y, "drafting table", view="front"),
             ArtistDesk(650, C.FLOOR_Y, "ink table", view="side", flip=True),
             Bookshelf(716, C.FLOOR_Y, "bound volumes"),
         ]
