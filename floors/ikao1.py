@@ -10,7 +10,7 @@ from engine.kit import (Bookshelf, CeilingLight, Couch, Crusher, Desk, Easel, Fi
 from engine.room import Platform, Room
 
 NAME = "5th Floor Comics"              # the name on the elevator panel
-AUTHOR = "Irene"                       # your name
+AUTHOR = "Irene Kao"                       # your name
 
 
 # --- Room 1: the West elevator is through its left edge ---
