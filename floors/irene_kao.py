@@ -12,32 +12,163 @@ import math
 import pygame
 
 from engine import config as C
-from engine.kit import (Bookshelf, CeilingLight, Couch, Crusher, Desk, Easel, FilingCabinet, PatrolBot, Plant,
-                        Plinth, Poster, Sign, Window)
-from engine.room import Platform, Room
+from engine.kit import Bookshelf, CeilingLight, Couch, Crusher, Easel, FilingCabinet, PatrolBot, Plinth
+from engine.room import Furniture, Platform, Room
 
 NAME = "5th Floor Comics"              # the name on the elevator panel
 AUTHOR = "Irene Kao"                   # your name
 
 INK = (14, 14, 18)                     # the black of inked comic linework
-PAPER = (250, 248, 236)                # speech-balloon paper
+PAPER = (250, 240, 220)                # speech-balloon paper and drawing paper
 WHITE = (255, 255, 255)
 YELLOW = (255, 214, 40)
 ORANGE = (255, 110, 50)
-GOLD = (230, 190, 70)
+RED = (226, 48, 48)
+CYAN = (80, 200, 255)
+MINT = (150, 240, 200)
+GOLD = (255, 200, 80)
+WOOD = (150, 98, 56)
+WOOD_LIGHT = (184, 130, 80)
+WOOD_DARK = (96, 60, 34)
+METAL = (70, 72, 84)
+
+# Each room has its own palette: a wall colour, its halftone dots, and the colour of its title box.
+BULLPEN = {"wall": (24, 46, 110), "dots": (44, 84, 170), "title": YELLOW}
+INK_ROOM = {"wall": (14, 66, 70), "dots": (30, 110, 104), "title": MINT}
+GALLERY = {"wall": (92, 24, 72), "dots": (140, 50, 110), "title": GOLD}
 
 
-def comic_wall(base, dot):
+def comic_wall(palette):
     """A halftone comic wall inside an ink frame. Built once in build(), then blitted every frame."""
     surf = pygame.Surface((C.W, C.H))
-    surf.fill(base)
+    surf.fill(palette["wall"])
     step = 14
     for row, y in enumerate(range(0, C.FLOOR_Y, step)):
         offset = step // 2 if row % 2 else 0
         for x in range(-step, C.W + step, step):
-            pygame.draw.circle(surf, dot, (x + offset, y), 2)
+            pygame.draw.circle(surf, palette["dots"], (x + offset, y), 2)
     pygame.draw.rect(surf, INK, surf.get_rect(), 8)
     return surf
+
+
+# --- comic-book shapes ------------------------------------------------------------------------------
+# Shapes are in fractions of a rectangle: (0, 0) is its top-left, (1, 1) its bottom-right.
+
+def _pts(r, pairs):
+    return [(round(r.left + fx * r.w), round(r.top + fy * r.h)) for fx, fy in pairs]
+
+
+def shape(surf, colour, r, pairs, edge=2):
+    """A filled polygon with an ink outline (edge=0 for no outline)."""
+    pts = _pts(r, pairs)
+    pygame.draw.polygon(surf, colour, pts)
+    if edge:
+        pygame.draw.polygon(surf, INK, pts, edge)
+
+
+def disc(surf, colour, r, fx, fy, fr, edge=2):
+    """A filled circle; fr is its radius as a fraction of the rectangle's width (edge=0 for no outline)."""
+    centre = (round(r.left + fx * r.w), round(r.top + fy * r.h))
+    radius = max(1, round(fr * r.w))
+    pygame.draw.circle(surf, colour, centre, radius)
+    if edge:
+        pygame.draw.circle(surf, INK, centre, radius, edge)
+
+
+def stroke(surf, colour, r, a, b, width=2):
+    pygame.draw.line(surf, colour, _pts(r, [a])[0], _pts(r, [b])[0], width)
+
+
+# --- comic-book decor -------------------------------------------------------------------------------
+
+def hero_art(surf, r, sky):
+    """A caped hero against a burst of rays."""
+    for i in range(12):
+        a = math.pi * 2 * i / 12
+        stroke(surf, (255, 236, 160), r, (0.5, 0.42), (0.5 + math.cos(a), 0.42 + math.sin(a)), 2)
+    shape(surf, RED, r, [(0.30, 0.44), (0.70, 0.44), (0.98, 1.0), (0.02, 1.0)])          # cape
+    shape(surf, INK, r, [(0.33, 0.42), (0.67, 0.42), (0.58, 0.82), (0.42, 0.82)], edge=0)  # suit
+    shape(surf, YELLOW, r, [(0.50, 0.50), (0.58, 0.58), (0.50, 0.68), (0.42, 0.58)], edge=1)  # emblem
+    disc(surf, INK, r, 0.50, 0.28, 0.15, edge=0)                                          # head
+    stroke(surf, WHITE, r, (0.40, 0.27), (0.60, 0.27), 3)                                  # mask slit
+
+
+def skyline_art(surf, r, sky):
+    """A night city: a moon over lit windows."""
+    disc(surf, (250, 240, 210), r, 0.74, 0.22, 0.12, edge=0)
+    for x0, x1, height in ((0.02, 0.24, 0.52), (0.24, 0.44, 0.72), (0.44, 0.62, 0.42),
+                           (0.62, 0.82, 0.84), (0.82, 0.98, 0.58)):
+        top = 1 - height
+        shape(surf, (16, 16, 32), r, [(x0, top), (x1, top), (x1, 1.0), (x0, 1.0)])
+        wy = top + 0.06
+        while wy < 0.92:
+            wx = x0 + 0.05
+            while wx < x1 - 0.10:
+                if (round(wx * 100) + round(wy * 100)) % 3:
+                    shape(surf, YELLOW, r, [(wx, wy), (wx + 0.06, wy), (wx + 0.06, wy + 0.05), (wx, wy + 0.05)], edge=0)
+                wx += 0.12
+            wy += 0.10
+
+
+def inkwell_art(surf, r, sky):
+    """An ink bottle, a splat and a pen nib."""
+    shape(surf, (150, 100, 60), r, [(0.38, 0.20), (0.62, 0.20), (0.62, 0.29), (0.38, 0.29)])        # cork
+    shape(surf, (90, 110, 120), r, [(0.42, 0.29), (0.58, 0.29), (0.58, 0.44), (0.42, 0.44)])        # neck
+    shape(surf, (120, 50, 190), r, [(0.28, 0.44), (0.72, 0.44), (0.80, 0.66), (0.80, 0.90),
+                                    (0.20, 0.90), (0.20, 0.66)])                                    # ink
+    shape(surf, (215, 195, 255), r, [(0.30, 0.52), (0.36, 0.52), (0.33, 0.80), (0.27, 0.80)], edge=0)  # glint
+    disc(surf, INK, r, 0.16, 0.93, 0.08, edge=0)
+    disc(surf, INK, r, 0.50, 0.97, 0.12, edge=0)
+    disc(surf, INK, r, 0.84, 0.92, 0.07, edge=0)
+    shape(surf, (190, 190, 200), r, [(0.78, 0.10), (0.97, 0.02), (0.92, 0.22)], edge=1)               # nib
+
+
+class Panel:
+    """A comic-book panel: an ink-framed picture with halftone shading and an optional caption box.
+    x, y is its top-left corner. Decor: only looked at."""
+
+    def __init__(self, x, y, w, h, art, sky, caption=None, caption_fill=YELLOW):
+        self.image = pygame.Surface((w, h))
+        r = self.image.get_rect()
+        self.image.fill(sky)
+        dots = tuple(max(0, c - 22) for c in sky)
+        for row, yy in enumerate(range(0, h, 8)):
+            for xx in range(4 if row % 2 else 0, w, 8):
+                pygame.draw.circle(self.image, dots, (xx, yy), 1)
+        art(self.image, r, sky)
+        if caption:
+            font = pygame.font.Font(None, 24)
+            font.set_bold(True)
+            label = font.render(caption, True, INK)
+            box = pygame.Rect(0, 0, label.get_width() + 12, label.get_height() + 6)
+            box.midtop = (r.centerx, 6)
+            pygame.draw.rect(self.image, caption_fill, box)
+            pygame.draw.rect(self.image, INK, box, 2)
+            self.image.blit(label, label.get_rect(center=box.center))
+        pygame.draw.rect(self.image, INK, r, 4)
+        self.pos = (int(x), int(y))
+
+    def draw(self, surf):
+        surf.blit(self.image, self.pos)
+
+
+class Caption:
+    """A caption box, like the title boxes in a comic: room names and TO BE CONTINUED... x, y is its top-left."""
+
+    def __init__(self, x, y, text, fill, size=26):
+        font = pygame.font.Font(None, size)
+        font.set_bold(True)
+        label = font.render(text, True, INK)
+        w, h = label.get_width() + 24, label.get_height() + 12
+        self.image = pygame.Surface((w + 5, h + 5), pygame.SRCALPHA)
+        pygame.draw.rect(self.image, INK, (5, 5, w, h))            # drop shadow
+        pygame.draw.rect(self.image, fill, (0, 0, w, h))
+        pygame.draw.rect(self.image, INK, (0, 0, w, h), 3)
+        self.image.blit(label, label.get_rect(center=(w // 2, h // 2)))
+        self.pos = (int(x), int(y))
+
+    def draw(self, surf):
+        surf.blit(self.image, self.pos)
 
 
 class Burst:
@@ -87,34 +218,87 @@ class Bubble:
         surf.blit(self.image, self.pos)
 
 
-# --- drawing the villains -----------------------------------------------------------------------------
-# Costumes are drawn in fractions of the hit-box: (0, 0) is its top-left, (1, 1) its bottom-right.
-# Numbers outside 0..1 are fine, so a cape can hang past the box without changing the hit-box.
+# --- furniture: the artist's table ------------------------------------------------------------------
 
-def _pts(r, pairs):
-    return [(round(r.left + fx * r.w), round(r.top + fy * r.h)) for fx, fy in pairs]
+def _mirror(pairs, flip):
+    return [(1 - fx if flip else fx, fy) for fx, fy in pairs]
 
 
-def shape(surf, colour, r, pairs, edge=2):
-    """A filled polygon with an ink outline (edge=0 for no outline)."""
-    pts = _pts(r, pairs)
-    pygame.draw.polygon(surf, colour, pts)
-    if edge:
-        pygame.draw.polygon(surf, INK, pts, edge)
+class ArtistDesk(Furniture):
+    """An artist's table, drawn at twice the characters' scale (a person is about 44 px tall in this game).
+    60 px wide and its top sits about 42 px off the floor. Four views:
+
+      'side'           in profile, with a tilted board and a lamp
+      'front'          facing you, with a comic page standing on it
+      'three_quarter'  the top seen at an angle, with the board leaning back
+      'spread'         pages laid out on the top, seen from above
+
+    flip=True turns it around. Searchable like any desk: its rect is the part you search.
+    """
+
+    W, H = 60, 64
+
+    def __init__(self, x, y, name, view="side", flip=False, holds_piece=False):
+        super().__init__(x, y, self.W, self.H, name, holds_piece=holds_piece)
+        self.view, self.flip = view, flip
+
+    def draw(self, surf):
+        r = self.rect
+        wood = WOOD_DARK if self.searched else WOOD
+        light = WOOD_DARK if self.searched else WOOD_LIGHT
+        f = self.flip
+
+        def poly(colour, pairs, edge=1):
+            shape(surf, colour, r, _mirror(pairs, f), edge)
+
+        def line(colour, a, b, width=2):
+            p, q = _mirror([a, b], f)
+            stroke(surf, colour, r, p, q, width)
+
+        if self.view == "front":
+            poly(PAPER, [(0.18, 0.02), (0.82, 0.02), (0.82, 0.56), (0.18, 0.56)])        # comic page on the easel
+            line(INK, (0.50, 0.02), (0.50, 0.56), 1)
+            line(INK, (0.18, 0.28), (0.82, 0.28), 1)
+            poly(light, [(0.00, 0.58), (1.00, 0.58), (1.00, 0.66), (0.00, 0.66)])         # table top
+            line(WOOD_DARK, (0.06, 0.66), (0.06, 1.00), 2)
+            line(WOOD_DARK, (0.94, 0.66), (0.94, 1.00), 2)
+            poly((200, 60, 60), [(0.08, 0.44), (0.22, 0.44), (0.22, 0.58), (0.08, 0.58)])  # pencil cup
+            line(YELLOW, (0.12, 0.44), (0.10, 0.30), 2)
+            line(CYAN, (0.18, 0.44), (0.20, 0.32), 2)
+        elif self.view == "three_quarter":
+            poly(light, [(0.00, 0.52), (0.62, 0.36), (1.00, 0.46), (0.38, 0.62)])         # top, seen at an angle
+            poly(wood, [(0.00, 0.52), (0.38, 0.62), (0.38, 0.70), (0.00, 0.60)])         # front edge
+            poly(wood, [(0.38, 0.62), (1.00, 0.46), (1.00, 0.54), (0.38, 0.70)])         # side edge
+            line(WOOD_DARK, (0.04, 0.60), (0.04, 1.00), 2)
+            line(WOOD_DARK, (0.38, 0.70), (0.38, 1.00), 2)
+            line(WOOD_DARK, (0.97, 0.54), (0.97, 1.00), 2)
+            poly(PAPER, [(0.14, 0.38), (0.56, 0.06), (0.80, 0.12), (0.40, 0.42)])        # board leaning back
+            line(INK, (0.34, 0.24), (0.62, 0.10), 1)
+            line(METAL, (0.90, 0.42), (0.90, 0.06), 2)                                    # lamp pole
+            poly(YELLOW, [(0.84, 0.00), (1.00, 0.08), (0.84, 0.12)])                       # lamp shade
+        elif self.view == "spread":
+            poly(light, [(0.00, 0.42), (0.78, 0.30), (1.00, 0.46), (0.22, 0.62)])         # top, from above
+            poly(wood, [(0.22, 0.62), (1.00, 0.46), (1.00, 0.52), (0.22, 0.68)])         # front edge
+            line(WOOD_DARK, (0.06, 0.62), (0.06, 1.00), 2)
+            line(WOOD_DARK, (0.22, 0.68), (0.22, 1.00), 2)
+            line(WOOD_DARK, (0.94, 0.52), (0.94, 1.00), 2)
+            poly(PAPER, [(0.10, 0.40), (0.46, 0.30), (0.60, 0.42), (0.24, 0.52)])        # page one
+            line(INK, (0.35, 0.35), (0.42, 0.47), 1)
+            poly(PAPER, [(0.50, 0.46), (0.80, 0.36), (0.92, 0.44), (0.62, 0.54)])        # page two
+            line(INK, (0.70, 0.41), (0.76, 0.50), 1)
+            line(YELLOW, (0.66, 0.60), (0.90, 0.56), 2)                                   # a pencil
+        else:                                                                             # 'side'
+            poly(wood, [(0.00, 0.52), (0.92, 0.36), (0.92, 0.46), (0.00, 0.62)])         # tilted board
+            poly(PAPER, [(0.08, 0.52), (0.82, 0.38), (0.82, 0.45), (0.08, 0.60)])        # page on the board
+            line(WOOD_DARK, (0.18, 0.62), (0.10, 1.00), 2)
+            line(WOOD_DARK, (0.80, 0.46), (0.90, 1.00), 2)
+            line(METAL, (0.92, 0.36), (0.92, 0.04), 2)                                    # lamp pole
+            poly(YELLOW, [(0.84, 0.00), (1.00, 0.10), (0.80, 0.10)])                       # lamp shade
+            poly((200, 60, 60), [(0.10, 0.88), (0.30, 0.88), (0.30, 1.00), (0.10, 1.00)])  # pencil cup
 
 
-def disc(surf, colour, r, fx, fy, fr, edge=2):
-    """A filled circle, fr is its radius as a fraction of the box width (edge=0 for no outline)."""
-    centre = (round(r.left + fx * r.w), round(r.top + fy * r.h))
-    radius = max(1, round(fr * r.w))
-    pygame.draw.circle(surf, colour, centre, radius)
-    if edge:
-        pygame.draw.circle(surf, INK, centre, radius, edge)
-
-
-def stroke(surf, colour, r, a, b, width=2):
-    pygame.draw.line(surf, colour, _pts(r, [a])[0], _pts(r, [b])[0], width)
-
+# --- the villains -----------------------------------------------------------------------------------
+# Costumes are drawn with the same fractional shapes as the panels: (0, 0) is the hit-box's top-left.
 
 def pencil_thug(surf, inner):
     """The Pencil Thug: a scalloped red cape, a dark coat with a red tie, a domino mask and a pencil."""
@@ -138,8 +322,7 @@ def pencil_thug(surf, inner):
     stroke(surf, INK, r, (0.28, 0.17), (0.44, 0.22), 2)                                     # angry brows
     stroke(surf, INK, r, (0.72, 0.17), (0.56, 0.22), 2)
     shape(surf, WHITE, r, [(0.40, 0.39), (0.60, 0.39), (0.58, 0.43), (0.42, 0.43)], edge=1)  # sneer
-    # the pencil he's holding
-    shape(surf, YELLOW, r, [(0.90, 0.60), (0.96, 0.56), (1.30, 0.22), (1.24, 0.16)], edge=1)
+    shape(surf, YELLOW, r, [(0.90, 0.60), (0.96, 0.56), (1.30, 0.22), (1.24, 0.16)], edge=1)  # pencil
     shape(surf, (70, 70, 80), r, [(1.24, 0.16), (1.30, 0.22), (1.40, 0.10)], edge=1)
     disc(surf, (255, 200, 170), r, 0.93, 0.60, 0.05, edge=1)                                # hand
 
@@ -301,25 +484,28 @@ class Bullpen(Room):
     title = "Bullpen"
 
     def build(self):
-        self.comic_bg = comic_wall((30, 44, 96), (48, 70, 134))
+        self.comic_bg = comic_wall(BULLPEN)
         self.decor += [
-            Sign(330, 46, "THE BULLPEN!", YELLOW),
-            Poster(110, 80, "POW!", (226, 48, 48)),
-            Poster(200, 80, "BAM!", (40, 120, 230)),
-            Bubble(290, 190, "DEADLINE!"),
+            Caption(300, 22, "THE BULLPEN!", BULLPEN["title"]),
+            Panel(110, 66, 92, 124, hero_art, RED, "POW!", YELLOW),
+            Panel(214, 66, 92, 124, skyline_art, (30, 90, 200), "NIGHT", CYAN),
+            Bubble(300, 210, "DEADLINE!"),
             Bubble(470, 250, "HA HA!"),
             Burst(500, 160, "ZAP!", YELLOW),
-            Window(640, 70, seed=3),
+            Panel(640, 56, 150, 124, skyline_art, (20, 60, 150), "CITY", YELLOW),
             CeilingLight(480),
         ]
         self.platforms.append(Platform(400, 410, 200))
         self.furniture += [
-            Desk(120, C.FLOOR_Y, "inking desk"),
-            Desk(430, 410, "pencil desk"),
-            Bookshelf(740, C.FLOOR_Y, "back issues"),
-            Plant(830, C.FLOOR_Y),
+            ArtistDesk(90, C.FLOOR_Y, "drafting table", view="front"),
+            ArtistDesk(160, C.FLOOR_Y, "inking desk", view="three_quarter"),
+            ArtistDesk(230, C.FLOOR_Y, "lettering desk", view="side", flip=True),
+            ArtistDesk(700, C.FLOOR_Y, "ink wash table", view="spread"),
+            Bookshelf(806, C.FLOOR_Y, "back issues"),
+            ArtistDesk(420, 410, "layout desk", view="three_quarter"),
+            ArtistDesk(500, 410, "sketch desk", view="front", flip=True),
         ]
-        self.hazards.append(Villain(PatrolBot(360, C.FLOOR_Y, left=260, right=700, speed=80), pencil_thug))
+        self.hazards.append(Villain(PatrolBot(360, C.FLOOR_Y, left=330, right=640, speed=80), pencil_thug))
 
     def draw_background(self, surf):
         surf.blit(self.comic_bg, (0, 0))
@@ -334,13 +520,14 @@ class InkRoom(Room):
     title = "Ink Room"
 
     def build(self):
-        self.comic_bg = comic_wall((20, 62, 64), (34, 96, 94))
+        self.comic_bg = comic_wall(INK_ROOM)
         self.decor += [
-            Sign(360, 46, "INK ROOM!", (120, 240, 210)),
-            Poster(560, 80, "ZAP!", (240, 140, 40)),
-            Bubble(90, 150, "SHH..."),
+            Caption(360, 46, "INK ROOM!", INK_ROOM["title"]),
+            Panel(110, 62, 92, 124, inkwell_art, (60, 30, 90), "INK!", MINT),
+            Panel(590, 60, 96, 124, hero_art, (230, 90, 40), None),
+            Bubble(220, 190, "SHH..."),
             Bubble(200, 330, "MWAHAHA!"),
-            Burst(820, 170, "INK!", (240, 140, 40)),
+            Burst(820, 170, "INK!", ORANGE),
             CeilingLight(320),
         ]
         # Each ledge is one jump (about 90 px) above the last, so you can climb them in order.
@@ -353,10 +540,14 @@ class InkRoom(Room):
             Easel(110, 410, "sketch easel"),
             FilingCabinet(430, 330, "ink drawer"),
             Plinth(700, 250, "original page", holds_piece=True),
-            Desk(300, C.FLOOR_Y, "light table"),
+            ArtistDesk(500, 330, "ink table", view="three_quarter"),
+            ArtistDesk(320, C.FLOOR_Y, "light table", view="side"),
+            ArtistDesk(392, C.FLOOR_Y, "drafting table", view="front", flip=True),
+            ArtistDesk(464, C.FLOOR_Y, "spread desk", view="spread"),
             Couch(600, C.FLOOR_Y, "reading couch"),
+            ArtistDesk(760, C.FLOOR_Y, "inking table", view="spread", flip=True),
         ]
-        self.hazards.append(Villain(PatrolBot(180, C.FLOOR_Y, left=90, right=280, speed=80), inkblot))
+        self.hazards.append(Villain(PatrolBot(180, C.FLOOR_Y, left=90, right=262, speed=80), inkblot))
 
     def draw_background(self, surf):
         surf.blit(self.comic_bg, (0, 0))
@@ -371,25 +562,29 @@ class Gallery(Room):
     title = "Gallery"
 
     def build(self):
-        self.comic_bg = comic_wall((90, 28, 68), (128, 48, 98))
+        self.comic_bg = comic_wall(GALLERY)
         self.decor += [
-            Sign(330, 46, "THE GALLERY!", (255, 240, 120)),
-            Sign(60, 230, "TO BE CONTINUED...", (255, 240, 120), size=22),
-            Poster(120, 80, "END", (200, 70, 60)),
-            Window(600, 70, seed=7),
-            Burst(820, 150, "WHAM!", (255, 240, 120)),
+            Caption(250, 46, "THE GALLERY!", GALLERY["title"]),
+            Caption(60, 230, "TO BE CONTINUED...", GOLD, size=22),
+            Panel(120, 66, 92, 124, hero_art, (200, 60, 50), "END", GOLD),
+            Panel(600, 56, 150, 124, skyline_art, (60, 20, 110), "NIGHT", GOLD),
+            Burst(850, 300, "WHAM!", GOLD),
             CeilingLight(480),
         ]
         self.platforms.append(Platform(300, 410, 180))
         self.furniture += [
             Plinth(120, C.FLOOR_Y, "panel one"),
+            ArtistDesk(204, C.FLOOR_Y, "ink table", view="front"),
+            ArtistDesk(268, C.FLOOR_Y, "drafting table", view="spread", flip=True),
             Plinth(330, 410, "panel two"),
-            Bookshelf(560, C.FLOOR_Y, "bound volumes"),
-            Plant(800, C.FLOOR_Y),
+            ArtistDesk(412, 410, "lettering desk", view="side"),
+            ArtistDesk(580, C.FLOOR_Y, "drafting table", view="three_quarter"),
+            ArtistDesk(650, C.FLOOR_Y, "ink table", view="side", flip=True),
+            Bookshelf(716, C.FLOOR_Y, "bound volumes"),
         ]
         self.hazards += [
-            Villain(PatrolBot(260, C.FLOOR_Y, left=220, right=540, speed=70), framer((40, 110, 200))),
-            Villain(Crusher(700, y_top=180, w=50, h=40), anvil),
+            Villain(PatrolBot(360, C.FLOOR_Y, left=330, right=520, speed=70), framer((40, 110, 200))),
+            Villain(Crusher(790, y_top=180, w=50, h=40), anvil),
         ]
 
     def draw_background(self, surf):
