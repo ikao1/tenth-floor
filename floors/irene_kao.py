@@ -446,16 +446,17 @@ class Villain:
                 self.rect = player.rect              # touching now: the engine sends you back
             return
         self.inner.update(dt, room, player)
-        self.rect = self.inner.rect
-        # The engine takes dt off the player's safe time after this runs, then checks it. Check the same way,
-        # or the frame the safe time runs out would send the player back with no POW! and BAM!.
-        if player.safe - dt <= 0 and self.rect.colliderect(player.rect):
-            cx, cy = player.rect.center
-            place(self.pow, cx - 60, cy - 70)
-            place(self.bam, cx + 60, cy - 40)
-            self.pin = (player.x, player.y)
-            self.hit_left = self.HIT_TIME
-            self.rect = pygame.Rect(0, 0, 0, 0)
+        # The engine checks for a touch inside Player.update(), which runs before the player's move is
+        # finished. If the hit-box were live here, a walk into a villain would send you back with no POW!.
+        # So the box stays off, and draw() checks for the touch once the player has moved.
+        self.rect = pygame.Rect(0, 0, 0, 0)
+
+    def start_hit(self, player):
+        cx, cy = player.rect.center
+        place(self.pow, cx - 60, cy - 70)
+        place(self.bam, cx + 60, cy - 40)
+        self.pin = (player.x, player.y)
+        self.hit_left = self.HIT_TIME
 
     def freeze(self, player):
         player.x, player.y = self.pin                # you're frozen in place
@@ -463,9 +464,13 @@ class Villain:
         player.searching = None
 
     def draw(self, surf):
-        # The player moves after update() and before they're drawn, so hold them in place again here.
-        if self.hit_left > 0 and self.player is not None:
-            self.freeze(self.player)
+        player = self.player
+        if player is not None:
+            if self.hit_left > 0:
+                # The player moves after update() and before they're drawn, so hold them in place here.
+                self.freeze(player)
+            elif player.safe <= 0 and self.inner.rect.colliderect(player.rect):
+                self.start_hit(player)                   # touching, after the player's move: POW! and BAM!
         self.paint(surf, self.inner)
 
     def draw_fx(self, surf):
